@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hotel Booking Demo</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <main class="card">
+    <p class="eyebrow">A tiny event tracking demo</p>
+    <h1>Hotel Booking Demo</h1>
+    <section class="room" aria-labelledby="room-name">
+      <p class="room-number">ROOM 204</p>
+      <h2 id="room-name">Deluxe Room</h2>
+      <p class="price">$100 <span>/ night</span></p>
+      <p class="description">A comfortable room for your next city stay.</p>
+      <div class="buttons">
+        <button id="book-button" type="button">Book Now</button>
+        <button id="contact-button" class="secondary" type="button">Contact Us</button>
+      </div>
+    </section>
+    <p id="status" role="status" aria-live="polite">Ready.</p>
+  </main>
+</body>
+</html>
