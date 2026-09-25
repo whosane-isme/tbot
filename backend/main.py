@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Read backend/backend.env values into this process. The browser never sees them.
+# Read backend/.env values into this process. The browser never sees them.
 load_dotenv()
 
 app = FastAPI()

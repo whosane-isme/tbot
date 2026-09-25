@@ -136,6 +136,8 @@ If no Telegram credentials are configured, the backend still prints the event, t
 
 The three files with the most important moving parts are `script.js`, `main.py`, and `.env`; `index.html` supplies the UI that creates the actions.
 
+For a chapter-by-chapter path to rebuild the backend yourself, see [REBUILD_MAIN_PY.md](REBUILD_MAIN_PY.md). Each chapter adds and tests one idea before moving on.
+
 ## Questions
 
 ### What is the server in this project?
