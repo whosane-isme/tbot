@@ -33,7 +33,7 @@ class Event(BaseModel):
 
 
 @app.get("/health")
-async def health():
+def health():
     # A small route you can open in a browser to confirm the server is running.
     return {"status": "ok"}
 

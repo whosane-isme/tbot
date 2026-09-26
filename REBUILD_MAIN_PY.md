@@ -1,6 +1,6 @@
 # Rebuild `main.py` From Scratch
 
-This is a hands-on tutorial for recreating the small backend in this repository. The aim is to make each new piece understandable and testable before adding the next one.
+This is a hands-on tutorial for recreating the small backend in this repository. It is an educational prototype, not a production architecture guide. The aim is to make each new piece understandable and testable before adding the next one.
 
 The teaching approach is inspired by [Build Your Own X](https://github.com/codecrafters-io/build-your-own-x): learn by constructing a working thing one small piece at a time. Here, we are not rebuilding FastAPI or Telegram. We are rebuilding our tiny application and making the HTTP steps visible.
 
@@ -22,7 +22,7 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-The examples use the demo frontend already in `frontend/`. Keep real Telegram credentials out of Python and JavaScript. Chapter 10 explains the ignored `backend/.env` file. If your terminal is already running Uvicorn, stop it with Ctrl+C before replacing the file, then start it again.
+The optional demo frontend lives in `frontend/`, but you do not need to understand or use it to complete the backend chapters. Keep real Telegram credentials out of Python and JavaScript. Chapter 10 explains the ignored `backend/.env` file. If your terminal is already running Uvicorn, stop it with Ctrl+C before replacing `main.py`, then start it again.
 
 ---
 
@@ -44,10 +44,17 @@ There are two separate HTTP conversations:
 
 | Connection | Client | Server | What is being requested? |
 |---|---|---|---|
-| Browser → FastAPI | The browser running `script.js` | Our FastAPI app, served by Uvicorn | “Please record this page or button event.” |
+| Client page → FastAPI | The `/docs` page now; a browser page later | Our FastAPI app, served by Uvicorn | “Please record this event.” |
 | FastAPI → Telegram | Our Python backend | Telegram's Bot API | “Please send this text to this chat.” |
 
-The word **server** describes a role in one conversation. FastAPI is a server when the browser calls it; it becomes an HTTP client when it calls Telegram.
+The word **server** describes a role in one conversation. Our FastAPI application handles incoming browser requests. For the outgoing Telegram request, our Python code uses `httpx`, an HTTP client library:
+
+```text
+Browser ──HTTP──> FastAPI application ──uses httpx──> Telegram Bot API
+ client              web framework       HTTP client       server
+```
+
+In the second connection, the backend is the client side of the conversation, and Telegram is the server. More precisely, `httpx` is the library that constructs and sends that outgoing HTTP request.
 
 ## Important words, in this project
 
@@ -60,17 +67,21 @@ The word **server** describes a role in one conversation. FastAPI is a server wh
 | Response | The server's reply, containing a status code and often data. |
 | Route | A rule in our backend that connects an HTTP method and path to Python code, such as `POST /event`. |
 | Endpoint | The address-and-method pair a client can call, such as `GET /health`. |
-| GET | An HTTP request method commonly used to retrieve information. The browser sends a GET request when it opens `/health`. |
-| POST | An HTTP request method commonly used to submit data for processing. JavaScript sends event JSON with POST. |
+| GET | An HTTP request method commonly used to retrieve information. `GET /health` asks for the current health information. |
+| POST | An HTTP request method commonly used to submit data for processing. `POST /event` asks the backend to process event data. |
 | JSON | Text for structured values, such as `{"event_type":"book_click"}`. |
 | Request body | The optional data portion of a request. The event's JSON goes here. |
 | Status code | A number in the response. `200` means success; `404` means the path was not found; `422` commonly means FastAPI could not validate the submitted data; `503` is used here when Telegram settings are missing. |
 | API | A defined way for programs to ask another program to do something. `/event` is our API endpoint. |
 | Third-party API | An API operated by another service. Telegram's Bot API is third-party from our app's point of view. |
 
-## A common misunderstanding
+## GET and POST are both requests
 
-GET is not “the server receives,” and POST is not “the server sends.” Both GET and POST are requests sent by a client. The method describes the kind of operation the client is asking the server to perform. The server receives either request and sends a response back.
+Both GET and POST are requests sent by a client to a server. The server receives either request and sends a response back. GET is commonly used to ask for information; POST is commonly used to submit information for processing. These are conventions that help describe the request. GET does not mean “the server receives” and POST does not mean “the server sends.” In our project, the browser sends both requests; later, `httpx` sends a POST request to Telegram.
+
+## A path and a method work together
+
+`GET /health` and `POST /health` have the same path but different methods. FastAPI can map them to different Python functions. A path that has no matching route usually gets `404 Not Found`. If a path exists but the client uses a method that the app did not register for it, the response is usually `405 Method Not Allowed`.
 
 ## How to test this mental model
 
@@ -82,7 +93,7 @@ Thinking “FastAPI sends to Telegram, so FastAPI is always the client.” Clien
 
 ## Tiny exercise
 
-For a Postman request to `/event`, name the client, server, method, and data format before clicking **Send**.
+For a `/docs` request to `/event`, name the client, server, method, path, and data format before clicking **Execute**.
 
 ## What changed from the previous version?
 
@@ -119,7 +130,17 @@ def health():
 
 - `from fastapi import FastAPI`: `fastapi` is an installed package, not part of Python's standard library. `FastAPI` is the class we use to create the web application. Without it, this file has no FastAPI app.
 - `app = FastAPI()`: call the class to create one application object and store it in the variable `app`. Uvicorn will be given this object. `app` is just a variable name; the command later expects this name because we choose to name it `app`.
-- `@app.get("/health")`: this is a decorator. The `@` syntax applies a function to the definition that follows. FastAPI's `.get()` registers the following function for GET requests whose path is `/health`. Remove the decorator and FastAPI will not know that the function handles this URL.
+- `@app.get("/health")`: first ask what FastAPI needs to know: “If a GET request arrives at `/health`, which Python function should I run?” This line registers that mapping:
+
+  ```text
+  GET /health
+       │
+       ▼
+  @app.get("/health")
+  def health():
+  ```
+
+  `GET` is the method; `/health` is the path; `.get(...)` registers the pair with FastAPI. The `@` is Python's decorator syntax: it applies the registration to the function definition immediately below it. The decorator is what connects the URL and method to the function.
 - `def health():`: define a normal Python function. FastAPI calls it when a matching request arrives. `health` is a name we chose.
 - `return {"status": "ok"}`: return a Python dictionary. FastAPI converts this dictionary to a JSON response and normally uses status `200`.
 
@@ -140,8 +161,22 @@ Uvicorn is a separate package and process. FastAPI describes how the app behaves
 
 ## How to test it
 
-1. Open `http://127.0.0.1:8000/health` in a browser. You should see `{"status":"ok"}`.
-2. Open `http://127.0.0.1:8000/docs`. FastAPI generated a page that can send test requests to the app.
+1. Open `http://127.0.0.1:8000/health` in a browser. The browser sends a real `GET /health` request; you should see `{"status":"ok"}`.
+2. Open `http://127.0.0.1:8000/docs`. FastAPI generated this interface for the app. When you click **Try it out** and **Execute**, `/docs` sends a real HTTP request to the API; it is not a fake simulation.
+
+## Same path, different method
+
+The decorator decides which method and path match this function. A function name does not set the URL. For example, if you changed only the function name:
+
+```python
+@app.get("/health")
+def banana():
+    return {"status": "ok"}
+```
+
+the route would still be `GET /health`. The name `banana` is not recommended; it demonstrates that the decorator holds the route mapping.
+
+`GET /health` and `POST /health` are different method-and-path pairs. This app registers GET only, so POSTing to `/health` usually returns `405 Method Not Allowed`. A request to an unregistered path such as `/missing` usually returns `404 Not Found`.
 
 ## Common mistakes
 
@@ -151,7 +186,7 @@ Uvicorn is a separate package and process. FastAPI describes how the app behaves
 
 ## Tiny exercise
 
-Change the returned status text to `"learning"`, save the file, and reload `/health`. With `--reload`, Uvicorn should restart automatically.
+In `/docs`, observe that only `GET /health` is registered. `/docs` does not offer a POST operation because we did not register one. If you send `POST /health` with Postman anyway, expect `405 Method Not Allowed`. Then change the returned status text to `"learning"`, save the file, and reload `/health`.
 
 ## What changed from the previous version?
 
@@ -163,15 +198,42 @@ We now have a running app and one GET route. There is no request body, Pydantic 
 
 ## Goal
 
-Send a small JSON object to FastAPI and see it in the terminal.
+Send an event-shaped JSON object to the backend and see what Python receives. We are not connecting Telegram or JavaScript yet.
 
-## New concept
+## Why add this?
 
-Add one POST route that temporarily accepts a plain Python dictionary. We use `dict` first so we can see the raw incoming fields before adding validation.
+Imagine the hotel website has several visitor actions:
 
-## Exact code to write
+- book a room
+- cancel a booking
+- contact the hotel
+- open the page
 
-Keep Chapter 1 and add the following route below `health()`:
+There are different ways to arrange the backend URLs.
+
+**Design A: one URL per action**
+
+```text
+POST /book
+POST /cancel
+POST /contact
+```
+
+Each URL could have its own Python function. That can make sense when the actions do different kinds of work.
+
+**Design B: one event URL, with the action described in the data**
+
+```text
+POST /event   body: {"event_type": "book_click"}
+POST /event   body: {"event_type": "cancel_click"}
+POST /event   body: {"event_type": "contact_click"}
+```
+
+This project chooses Design B because these actions are all treated as website events that will eventually produce Telegram notifications. The route can stay the same while the request body tells us which event happened.
+
+## What are we adding?
+
+Keep Chapter 1 and add this route below `health()`:
 
 ```python
 @app.post("/event")
@@ -180,7 +242,7 @@ def event(data: dict):
     return {"ok": True}
 ```
 
-After adding it, `main.py` is:
+After adding it, the complete `main.py` is:
 
 ```python
 from fastapi import FastAPI
@@ -199,65 +261,194 @@ def event(data: dict):
     return {"ok": True}
 ```
 
-## Explanation
+## First understand what the whole route means
 
-- `@app.post("/event")`: like `.get()`, this FastAPI decorator registers a route. The method is POST and the path is `/event`.
-- `data: dict`: the function parameter is the JSON object FastAPI parsed from the request body. `dict` is a built-in Python type. This accepts dictionaries without describing which keys they must contain.
-- `print(data)`: print the value in the terminal running Uvicorn. This is a simple learning aid, not a logging system.
-- `return {"ok": True}`: FastAPI turns the returned dictionary into a JSON response.
+This code does **not** mean “this is the function for one specific button.” It means:
 
-The `dict` annotation helps FastAPI understand that this endpoint expects a JSON object body. We deliberately have not asked Pydantic to define event fields yet.
+> When a client sends a POST request to the path `/event` with a JSON object, FastAPI should call this Python function and put the decoded object in the parameter named `data`.
 
-## How to test it
+Multiple requests can reach the same function:
 
-1. Open `/docs`.
-2. Expand `POST /event`, choose **Try it out**, and enter:
+```text
+POST /event   body: {"event_type":"book_click"}   ─┐
+POST /event   body: {"event_type":"contact_click"} ├─> event(data)
+POST /event   body: {"event_type":"page_visit"}   ─┘
+```
+
+The method and path stay the same; the body changes. At this point there is no button at all. `/docs` or Postman can make the request. Later, each website button can ask a browser to send a different body to this same endpoint.
+
+## Separate the pieces of the code
+
+In:
+
+```python
+@app.post("/event")
+def event(data: dict):
+```
+
+- `POST` is the HTTP method. It describes the kind of request the client is making. Here it means “here is data for the server to process.”
+- `/event` is the URL path. It is the destination path written by the programmer. It is not a special FastAPI word; it could have been `/website-event` or `/notification` if we used that same path in the client.
+- `@app.post(...)` is the route registration. It tells FastAPI which method-and-path pair should call the function below.
+- `event` is only the Python function name. It is not the URL and it is not one button. The name could be changed to `receive_website_event`; the decorator would still register `POST /event`. For example, `@app.post("/event")` above `def banana(data: dict):` still handles `POST /event`; `banana` is simply a confusing function name.
+- `data` is a parameter name chosen by us. We could call it `body` or `incoming_event`; FastAPI puts the received value into whichever parameter name we wrote here.
+- `dict` is Python's built-in dictionary type. It says the function expects a dictionary-shaped value.
+- `data: dict` is a type annotation. FastAPI uses it to understand that the request body should be a JSON object and decode it into a Python dictionary. It does not yet say which keys must be present.
+
+The route and the body are separate parts of the request:
+
+```text
+POST /event
+     │       └── body carries the event's actual values
+     └── path says where this request goes
+
+Method: POST
+Body (JSON):
+{
+  "event_type": "book_click",
+  "room": 12
+}
+```
+
+FastAPI decodes that JSON object into an ordinary Python dictionary, approximately:
+
+```python
+data = {
+    "event_type": "book_click",
+    "room": 12,
+}
+```
+
+## What happens when it runs?
+
+```text
+/docs page
+   │
+   │ sends POST /event
+   │ body: {"event_type":"book_click", "room":12}
+   ▼
+Uvicorn receives the HTTP request and passes it to FastAPI
+   │
+   │ FastAPI matches method POST + path /event
+   ▼
+event(data)
+   │
+   │ data is the decoded Python dictionary
+   ▼
+print(data) writes it in the backend terminal
+   │
+   ▼
+FastAPI sends the JSON response {"ok": true} back to /docs
+```
+
+## How to test it with `/docs`
+
+`/docs` is generated by FastAPI. When you click **Try it out** and **Execute**, the page sends a real HTTP request to the running API. It is a real client, even though it was generated for us.
+
+1. Open `http://127.0.0.1:8000/docs`.
+2. Expand `POST /event`, click **Try it out**, and enter this in the request body:
 
    ```json
    {
-     "event_type": "book_click"
+     "event_type": "book_click",
+     "room": 12
    }
    ```
 
-3. Choose **Execute**.
+3. Click **Execute**. Then repeat with `{"event_type":"contact_click"}` and `{"event_type":"page_visit"}`. All three requests use the same route and Python function; only the body changes.
 
 ## Expected result
 
+For the first request, `/docs` shows status `200` and response `{"ok":true}`. The Uvicorn terminal prints a Python value like:
+
 ```text
-request → FastAPI → Python dict → print() → JSON response
+{'event_type': 'book_click', 'room': 12}
 ```
 
-The docs page should show status `200` and `{"ok":true}`. The Uvicorn terminal should print `{'event_type': 'book_click'}`. The browser/docs page is the client; FastAPI is the server.
+No Telegram message is sent yet.
 
 ## Common mistakes
 
+- Mixing up method, path, route, function, and body. They are separate: `POST` (method), `/event` (path), decorator (registration), `event` (function name), `data` (parameter name), dictionary (decoded value).
 - Sending a JSON string such as `"book_click"` instead of an object such as `{"event_type":"book_click"}`.
-- Putting the object in a query parameter instead of the request body.
-- Reading the result in the wrong place: the response is in `/docs`; `print()` appears in the terminal.
+- Looking for `print()` in the `/docs` response. Python's print output appears in the terminal running Uvicorn.
+- Calling a different path or method. An unknown path typically returns `404`; a known path with an unsupported method typically returns `405`.
 
 ## Tiny exercise
 
-Add a `page` key to the request. Observe that the dictionary contains it without changing the Python code.
+Send two different event bodies to `POST /event`. Do you need another route or another Python function for the second body?
+
+## Mental check
+
+Given:
+
+```text
+POST /event
+{"event_type":"book_click"}
+```
+
+1. What is the HTTP method?
+2. What is the path?
+3. What is the request body?
+4. Which Python function runs?
+5. What value is inside `data`?
+
+<details>
+<summary>Answer — reveal after trying</summary>
+
+1. The method is `POST`.
+2. The path is `/event`.
+3. The body is the JSON object `{"event_type":"book_click"}`.
+4. FastAPI calls `event()` because the decorator registered it for `POST /event`.
+5. `data` is approximately `{"event_type": "book_click"}` as a Python dictionary.
+</details>
 
 ## What changed from the previous version?
 
-We added one POST route. The health route still works. The event is only printed; Telegram is not involved.
+We added one POST route, leaving `GET /health` intact. The event is only printed. The same route can receive many event types because the body carries the changing value.
 
 ---
 
-# Chapter 3 — Connect the frontend
+# Chapter 3 — Optional: How a browser frontend would send the request
+
+> **Optional for now. You can skip this chapter and continue with `/docs` or Postman.** You do not need JavaScript to learn the FastAPI backend in the next chapters.
 
 ## Goal
 
-Follow one click from JavaScript to the Python dictionary.
+Understand that a future webpage can send the same request you already sent from `/docs`.
 
-## New concept
+## The backend does not care which client sent the request
 
-The browser uses `fetch()` to send HTTP. `JSON.stringify()` turns a JavaScript object into JSON text for the request body. FastAPI parses that JSON text into Python values before calling `event(data)`.
+Today:
 
-## Exact code to inspect
+```text
+FastAPI /docs → POST /event → backend
+```
 
-The existing `frontend/script.js` contains this simplified request:
+Later:
+
+```text
+browser JavaScript → POST /event → backend
+```
+
+Postman, a mobile app, another Python program, `/docs`, and a browser can all be HTTP clients. FastAPI receives an HTTP request; it does not need a different route for each client.
+
+## What a browser request contains
+
+When someone clicks **Book Now**, the future page needs to send this same kind of request:
+
+```text
+POST http://127.0.0.1:8000/event
+Content-Type: application/json
+
+Body:
+{"event_type":"book_click", "page":"Hotel Demo"}
+```
+
+`POST` is the method, `/event` is the path, and the JSON body is the data. The route and body remain separate. A Contact Us button could send the same POST path but a different body, `{"event_type":"contact_click"}`.
+
+## Optional JavaScript preview
+
+If you have not learned JavaScript, skip this code and go to Chapter 4. It is shown only to connect `/docs` to the existing demo page:
 
 ```javascript
 const API_URL = "http://127.0.0.1:8000";
@@ -274,80 +465,27 @@ async function sendEvent(eventType) {
 sendEvent("book_click");
 ```
 
-This is a small learning example; the real `script.js` calls it from button listeners and handles errors. Do not replace the working file with this snippet unless you are intentionally following along; the app still works as-is.
+`fetch()` asks the browser to send the HTTP request. `JSON.stringify()` turns a JavaScript object into JSON text for the body. FastAPI parses that JSON and passes a Python dictionary to the Chapter 2 function. JavaScript details are not needed to continue the backend tutorial.
 
-## Explanation
+## Why is the backend URL written in full?
 
-- `API_URL` is the address of FastAPI. The browser cannot guess which server owns `/event`, so the full address is used.
-- `fetch(url, options)` asks the browser to make an HTTP request. The browser is the client.
-- `method: "POST"` chooses the HTTP method. Both GET and POST are requests; this one submits event data.
-- `Content-Type: application/json` tells FastAPI what format the request body uses.
-- `JSON.stringify({...})` converts a JavaScript object into JSON text. `fetch` sends that text as the body.
-- `await` waits for the browser's network operation to return a response before the next line reads `response.status`.
-- On the Python side, `def event(data: dict)` receives the decoded object. The browser sent JSON text; FastAPI performed the conversion to a Python dictionary.
+A relative URL such as `fetch("/event")` normally targets the same origin that served the frontend. If the page came from `http://localhost:5500`, `/event` would mean approximately `http://localhost:5500/event`. But our API runs separately at `http://127.0.0.1:8000`, so the frontend example uses the full API URL.
 
-## How to run and test it
+## HTML-only note
 
-1. Run Uvicorn in `backend`.
-2. In a second terminal, run `python -m http.server 5500` from `frontend`, or use VS Code Live Server at `http://localhost:5500`.
-3. Open `http://localhost:5500` and click **Book Now**.
-4. Open DevTools (F12) → **Network**, select the `/event` request, and inspect **Request Method**, **Request Payload**, **Status Code**, and **Response**. Watch the Uvicorn terminal too.
+HTML forms can send POST requests without JavaScript. A normal `<form>` submission usually sends form-encoded fields, though, while our `data: dict` endpoint expects a JSON object. Converting between those formats adds another lesson. For backend chapters, `/docs` or Postman is the more direct client. CSS can be included in an HTML `<style>` tag if you want to style a temporary page; JavaScript can be learned later.
 
-## Debug three different outcomes
+## How to observe the optional browser request
 
-### 1. JavaScript did not send anything
-
-There is no `/event` entry in the Network list and nothing printed by Uvicorn. Look in the browser **Console** for a JavaScript error; check that the button ID in HTML matches the selector in JavaScript and that `script.js` loaded.
-
-For example, with Uvicorn stopped, Chrome/Edge may show `TypeError: Failed to fetch` in the Console and `POST http://127.0.0.1:8000/event net::ERR_CONNECTION_REFUSED`. In Network, the request has `(failed)` instead of an HTTP status. Browser wording can differ, but the key clue is that there is no HTTP response status.
-
-### 2. The browser sent a request, but FastAPI rejected it
-
-There is an `/event` entry in Network with a non-success status. A missing route might show `404`; malformed JSON or invalid request data can show `422`. Inspect the **Response** tab for FastAPI's error details. The route may not print anything if FastAPI rejects the request before it calls the function.
-
-For example, after Chapter 4, leaving out `event_type` can produce a response shaped like:
-
-```json
-{
-  "detail": [
-    {
-      "type": "missing",
-      "loc": ["body", "event_type"],
-      "msg": "Field required"
-    }
-  ]
-}
-```
-
-The exact validation wording can vary by Pydantic version. The useful clues are Network status `422` and a detail that points at the missing body field.
-
-### 3. FastAPI received it
-
-Network shows a success status such as `200`, its response is `{"ok":true}`, and the Uvicorn terminal prints the dictionary. This confirms browser → FastAPI worked. At this chapter, no Telegram message should be sent.
-
-Example evidence for the plain-dictionary chapter:
-
-```text
-Network: POST /event    Status: 200
-Response: {"ok":true}
-Uvicorn terminal: {'event_type': 'book_click', 'page': 'Hotel Demo'}
-Console: no error
-```
-
-## Common mistakes
-
-- Uvicorn is stopped: the browser cannot connect to port 8000.
-- Wrong API address or port: Network shows a failed request such as `(failed)`; the Console reports a fetch/network error.
-- Wrong JSON header: the server may not interpret the body as expected.
-- Looking for `print()` in the browser: Python output belongs to the backend terminal.
+If you already know enough JavaScript to run the existing demo, serve `frontend/` at `http://localhost:5500`, keep Uvicorn running, and click a button. DevTools → **Network** shows the actual POST request and its JSON payload. Otherwise, use `/docs` to continue: it sends the same method, path, and body.
 
 ## Tiny exercise
 
-Change the page value to `"My first fetch"`. Find that exact text in the Network request payload and then in the Python terminal.
+Without writing JavaScript, use `/docs` to send two different bodies to `POST /event`. Does FastAPI need to know whether the request came from `/docs` or Postman?
 
 ## What changed from the previous version?
 
-The backend did not change. We added a browser client to make the same POST request that `/docs` made manually.
+The backend did not change. This optional chapter showed another possible client. Chapters 4 onward continue with `/docs`; frontend knowledge is not a prerequisite.
 
 ---
 
@@ -357,9 +495,23 @@ The backend did not change. We added a browser client to make the same POST requ
 
 Describe the shape of a valid event instead of accepting any dictionary.
 
-## New concept
+## The problem first
 
-Pydantic is the data validation library FastAPI uses for request models. The model says which fields to expect and what types they should have.
+At the end of Chapter 2, the route accepted `data: dict`. That only told FastAPI “expect a JSON object.” These different JSON objects are all dictionaries:
+
+```json
+{"event_type":"book_click"}
+{"pizza":"banana"}
+{"event_type":123}
+```
+
+Python knows each one is a dictionary, but we have not described what keys must be inside it or what their values should look like. Our route could accidentally receive a dictionary with no `event_type` at all.
+
+Now we will describe the expected shape of that dictionary.
+
+## New concept: a Pydantic model
+
+Pydantic is a data-validation package that FastAPI integrates with. We define a class describing the fields we expect. FastAPI/Pydantic can check the request before our route function runs and give us a useful `422` response if required data is missing or has the wrong type.
 
 ## Exact code changes
 
@@ -387,9 +539,24 @@ def event(data: Event):
 
 **After:** `def event(data: Event):`
 
-The rest of the route is still the same. The `Event` class is a schema: it describes the JSON shape. `BaseModel` is from Pydantic, not Python. `class Event(BaseModel)` defines a new model based on Pydantic's model behavior. The annotation `event_type: str` says this field should be text. `page: str = "Hotel Demo"` says page is text and supplies a default if a request leaves it out.
+The rest of the route stays the same. The `Event` class is a schema: it describes the expected data shape. `BaseModel` comes from Pydantic, not Python. `class Event(BaseModel)` creates a Pydantic model class. `event_type: str` says `event_type` is required text. `page: str = "Hotel Demo"` says `page` is text and gives it a default when the request leaves it out.
 
-Pydantic checks incoming data and makes the fields available as `data.event_type` and `data.page`. Without this model, a plain dict accepts arbitrary keys and values and your code has to check them manually. We could write those checks ourselves, but Pydantic makes this small shape explicit and integrates with FastAPI's error response and docs.
+Important: an `Event` object is **not JSON**. JSON is what arrived in the HTTP request. FastAPI and Pydantic check it and create a Python `Event` object for the function:
+
+```text
+HTTP request body (JSON text)
+{"event_type":"book_click", "page":"Hotel Demo"}
+                 │
+                 ▼ FastAPI parses; Pydantic validates
+Python Event object
+                 │
+                 ├── data.event_type → "book_click"
+                 └── data.page       → "Hotel Demo"
+```
+
+With the old dictionary, read a value using `data["event_type"]`. With the Pydantic model, read it as `data.event_type`. Pydantic makes those named fields available after the input has passed validation.
+
+We could check all the dictionary contents with manual `if` statements. Pydantic is chosen here because it describes the small expected shape in one place and integrates with FastAPI's error response and `/docs` display. One detail: Pydantic models ignore extra fields by default in this simple setup. This chapter makes required fields and their types clear, but does not add a rule to reject every unknown key.
 
 ## How to test it
 
@@ -409,6 +576,8 @@ Then send:
 
 Expected: `422 Unprocessable Entity`, because `event_type` is required. FastAPI/Pydantic return the error before calling your route function, so the event is not printed.
 
+Also try `{"pizza":"banana"}`. It is valid JSON and a dictionary, but it does not contain the required `event_type`, so the model rejects it with `422`.
+
 ## Common mistakes
 
 - Forgetting `from pydantic import BaseModel` causes `NameError` when Python reads the class.
@@ -418,6 +587,16 @@ Expected: `422 Unprocessable Entity`, because `event_type` is required. FastAPI/
 ## Tiny exercise
 
 Leave `page` out of the request. What value does the model provide for `data.page`?
+
+## Mental check
+
+Who rejects `{"page":"Hotel"}` because `event_type` is missing: the browser, Uvicorn, the route function, FastAPI/Pydantic, or Telegram?
+
+<details>
+<summary>Answer — reveal after trying</summary>
+
+FastAPI/Pydantic reject it before calling the route. The browser sent the body; Uvicorn passed the request to FastAPI; the model validation failed; therefore the route function and Telegram are not reached.
+</details>
 
 ## What changed from the previous version?
 
@@ -431,9 +610,19 @@ Leave `page` out of the request. What value does the model provide for `data.pag
 
 Reject event names that this tiny demo does not know about.
 
-## New concept
+## The problem first
 
-`Literal` is from Python's standard-library `typing` module. It narrows a field from “any string” to one of the listed strings.
+Chapter 4 says `event_type` must be a string. But this request still has a string:
+
+```json
+{"event_type":"pizza"}
+```
+
+`event_type: str` accepts any text, even a name our event-message code does not know. We want text, but only these exact three event names.
+
+## New concept: `Literal`
+
+`Literal` comes from Python's standard-library `typing` module. Here it tells Pydantic: “This field is still text, but accept only one of these exact text values.”
 
 ## Exact code change
 
@@ -443,7 +632,7 @@ Add the import:
 from typing import Literal
 ```
 
-Then change one field:
+Then change one field. Nothing else in the model changes:
 
 **Before:**
 
@@ -459,7 +648,7 @@ event_type: Literal["page_visit", "book_click", "contact_click"]
 
 ## Explanation
 
-`str` accepts values like `"book_click"`, `"pizza_click"`, or `"typo"`. The `Literal[...]` annotation tells Pydantic that only the exact listed strings are valid. Remove `Literal` and the rule goes away. We could write an `if` statement to check the string ourselves; this declaration lets Pydantic perform that check before our route runs.
+**Before**, Pydantic checked only “is this text?” so `"pizza"` was accepted. **After**, Pydantic checks both “is this one of these exact text values?” and rejects `"pizza"` with `422`. Remove `Literal` and that restriction goes away. We could write our own `if` statement; this declaration lets Pydantic check it before the route runs.
 
 FastAPI receives and routes the HTTP request. Pydantic validates the request data against the model. When validation fails, FastAPI formats the validation problem as an HTTP response, usually `422`.
 
@@ -475,6 +664,16 @@ In `/docs`, send `{"event_type":"book_click"}`. It should work. Then send `{"eve
 ## Tiny exercise
 
 Temporarily remove one allowed name from `Literal`, reload `/docs`, and try that event again. Restore it afterward.
+
+## Mental check
+
+With the `Literal` version running, who rejects `{"event_type":"pizza"}` and does the route's `print()` run?
+
+<details>
+<summary>Answer — reveal after trying</summary>
+
+Pydantic validation, invoked by FastAPI before the route, rejects it with `422`. The route's `print()` does not run because the request did not pass validation.
+</details>
 
 ## What changed from the previous version?
 
@@ -651,6 +850,8 @@ JSON body:
 
 The token identifies the bot; `chat_id` identifies the destination; `text` is the message. These are placeholders, not usable credentials. Do not paste a real token into Python source, JavaScript, README examples, or Git. A real token in browser code is visible to visitors.
 
+Why keep it out of source code? A Python file may be copied or pushed to a public Git repository, where other people could read the token. A JavaScript file is delivered to each visitor's browser, so visitors can inspect it with DevTools. The Python backend is not normally delivered to the page, but committing its real token still exposes it to anyone who can read that repository. Chapter 10 moves both settings into the local ignored `.env` file.
+
 ## Explain both requests
 
 ```text
@@ -685,16 +886,30 @@ Nothing in the running app yet. We described the outbound request before choosin
 
 Make the backend send the formatted message to Telegram.
 
+## The problem first: our backend must contact Telegram
+
+FastAPI has received and validated `POST /event`, and Python has formatted the message. The next action is a new network conversation:
+
+```text
+Browser ──request──> FastAPI route
+                         │
+                         ├── formats the Telegram message
+                         │
+                         └── sends a new request over the internet ──> Telegram
+```
+
+The backend code needs a way to make that outgoing HTTP request.
+
 ## New concept: an HTTP client library
 
-`httpx` is an external Python package for sending HTTP requests. We choose it because the finished route is `async`, and `httpx.AsyncClient` lets the route wait for network I/O without blocking in the same way a synchronous call would. It also offers a simple `.post(..., json=...)` API.
+`httpx` is an external Python package for sending HTTP requests. In this project, FastAPI is the web framework handling the incoming request, while `httpx` is the HTTP client library that constructs and sends the outgoing Telegram request. We choose its `AsyncClient` because the sending function uses `async`/`await`, and `httpx.AsyncClient` can wait for network I/O without blocking the event loop in the same way a synchronous call would. It also offers a readable `.post(..., json=...)` method.
 
 Alternatives:
 
 - `requests` is popular and straightforward, but its usual API is synchronous. If a synchronous request runs inside an `async def` route, it blocks that worker while waiting. We could instead make the route synchronous and use `requests`; then the code would be simpler in one sense but its execution style would differ.
 - Python's standard-library `urllib` can send HTTP without installing a package. It is more manual for this JSON request and does not provide the same beginner-friendly async client interface. Avoiding a dependency is possible, but would distract from this project's async request flow.
 
-FastAPI is a third-party web framework; Pydantic validates request data; `httpx` is the HTTP client for the outbound Telegram request. Uvicorn is the server process. Each package has a separate job.
+FastAPI is a web framework; Pydantic validates incoming data; `httpx` sends the outbound Telegram request; Uvicorn listens for browser requests and passes them to FastAPI. These are separate jobs. In the Telegram connection, the backend is on the client side of the conversation, but `httpx` is the library actually making the HTTP request.
 
 ## Exact code to add
 
@@ -722,11 +937,25 @@ async def send_telegram_message(message: str) -> None:
     print(response.text)
 ```
 
-Then change the route to:
+The route from Chapter 6 was synchronous because it only called ordinary Python functions. Now we need to wait for an async HTTP operation. Change its definition and add the await:
+
+**Before:**
+
+```python
+@app.post("/event")
+def event(data: Event):
+    print(data)
+    message = make_telegram_message(data)
+    print(message)
+    return {"ok": True}
+```
+
+**After:**
 
 ```python
 @app.post("/event")
 async def event(data: Event):
+    print(data)
     message = make_telegram_message(data)
     await send_telegram_message(message)
     return {"attempted": True}
@@ -734,13 +963,27 @@ async def event(data: Event):
 
 ## Explanation
 
-- `async def` defines a function that can pause while waiting for an operation, such as network I/O.
+- `async def` marks a Python function that can `await` another asynchronous operation. Here that operation is an internet request to Telegram, which can take noticeable time to answer.
 - `httpx.AsyncClient()` creates an async HTTP client. `async with` opens it and closes its network resources when the indented block ends; that pattern is called a context manager.
 - `await client.post(...)` sends a POST request and pauses this coroutine until the HTTP response arrives. `json=...` asks httpx to encode that Python dictionary as a JSON request body and set the JSON content type.
 - `response` contains the HTTP response from Telegram. It has properties such as `status_code` and `text`.
 - The route must also be `async def` because it awaits the send function. Its `await` means “wait for that coroutine to finish here.”
 
-`async` and `await` do not make the request happen in the background; we still wait for Telegram's response before returning success to the browser. They let the server yield while waiting, so it can make better use of time handling other requests.
+The concrete sequence is:
+
+```text
+FastAPI receives /event
+        ↓
+our backend contacts Telegram over the internet
+        ↓
+the response may take time
+        ↓
+await waits for that response here
+```
+
+While an async task is waiting on network I/O, Python's event loop can work on other tasks instead of wasting that waiting time. You do not need to learn event-loop internals for this project. `await` does **not** mean “run in the background”: this request still waits for Telegram's response before this function continues and before FastAPI sends its response to the browser.
+
+If we used synchronous `requests`, we would usually make the route a normal `def` and call `requests.post(...)` without `await`. That is a valid style for a tiny app; waiting would block that worker until the response arrived. We use `httpx.AsyncClient` here so the async network wait fits the async route.
 
 ## How to test it
 
@@ -1014,9 +1257,19 @@ http://localhost:5500
 └scheme └host      └port
 ```
 
-The frontend at `http://localhost:5500` and the backend at `http://127.0.0.1:8000` have different origins. A browser enforces Cross-Origin Resource Sharing (CORS) rules before allowing JavaScript to read cross-origin responses. The browser may first send an `OPTIONS` preflight request to ask whether the POST with JSON is allowed.
+The frontend at `http://localhost:5500` and the backend at `http://127.0.0.1:8000` have different origins:
 
-CORS is a browser rule. It is not authentication. Allowing an origin does not stop someone from using curl or Postman to call the API directly, and it does not prevent every kind of attacker from making requests.
+```text
+Frontend origin: http://localhost:5500
+Backend origin:  http://127.0.0.1:8000
+                 └ scheme is http for both
+                   host differs: localhost vs 127.0.0.1
+                   port differs: 5500 vs 8000
+```
+
+An origin is **scheme + host + port**; changing any one makes a different origin. A browser enforces Cross-Origin Resource Sharing (CORS) rules before allowing JavaScript to read cross-origin responses. The browser may first send an `OPTIONS` preflight request to ask whether the POST with JSON is allowed.
+
+CORS is a browser rule. It is not authentication. Allowing an origin does not prevent curl, Postman, another server, or a script from sending requests to a public API. Those clients do not enforce the browser's CORS rules. A real public backend may later need authentication, rate limiting, persistent logging, and deployment configuration; those topics are outside this local learning prototype.
 
 ## Exact code to add
 
@@ -1091,7 +1344,12 @@ If one answer is fuzzy, revisit that chapter first. The purpose is understanding
 
 ## Complete file
 
-This is the finished educational prototype. It combines the same small steps; it does not add a database, framework layers, or extra files.
+This is the finished educational prototype, not a production architecture. It combines the same small steps; it does not add databases, service layers, authentication, rate limiting, Docker, or extra backend files. A real public application may need some of those later, but this project is about understanding the request path:
+
+```text
+client → HTTP request → FastAPI route → validation → Python code
+       → outgoing HTTP request through httpx → Telegram → response/error
+```
 
 ```python
 import os
@@ -1129,7 +1387,7 @@ class Event(BaseModel):
 
 
 @app.get("/health")
-async def health():
+def health():
     return {"status": "ok"}
 
 
@@ -1217,6 +1475,13 @@ async def receive_event(event: Event):
 
 The type annotations help explain what data is expected. The `async` route and `await` call match the async HTTP client. The route calls the formatter, then the sender, in that order so you can read the path in ordinary Python steps.
 
+Notice the difference between the two route functions:
+
+- `health()` is an ordinary `def` because it returns immediately and does not wait for network or other async work.
+- `receive_event()` is `async def` because it calls `await send_telegram_message(...)`. The async style appears only when the code needs it.
+
+Also keep the route pieces separate in your head: `POST` is the HTTP method, `/event` is the path, `@app.post(...)` registers that pair, and `receive_event` is the Python function FastAPI calls. Renaming the Python function does not rename the URL.
+
 ## How to run and test the final version
 
 From `backend`, start:
@@ -1260,11 +1525,7 @@ Do not copy the checklist's numbering as code. Try to recall what each item need
 
 # Break-It Exercises
 
-For **every** exercise, predict three things before changing anything:
-
-1. What will the browser Console show?
-2. What will the Network panel show (request, status, or failed connection)?
-3. What will the Uvicorn terminal show?
+For every exercise, predict what the caller and backend will show before changing anything. If you use the optional browser client, check its Console and Network panel; if you skipped JavaScript, use the `/docs` response. In either case, also check the Uvicorn terminal.
 
 Then make only the stated change, test it, and restore the code before moving on.
 
@@ -1346,6 +1607,46 @@ The browser cannot connect to FastAPI. Console reports a fetch/network error; Ne
 <summary>Answer — reveal after predicting</summary>
 
 The origin changes because port is part of the origin. Since `http://localhost:5501` is not in `allow_origins`, the browser blocks the cross-origin call. Add that exact origin to allow the demo from that port. Uvicorn may log an OPTIONS preflight; the route will not print an event if the browser never sends the POST.
+</details>
+
+## 9. Change `@app.post("/event")` to `@app.get("/event")`
+
+**Predict first:** the `/docs` or browser response, and the Uvicorn terminal.
+
+<details>
+<summary>Answer — reveal after predicting</summary>
+
+The frontend and the `/docs` POST request still call `POST /event`, but the route is now registered only for GET. The path exists and the method is unsupported, so POST usually returns `405 Method Not Allowed`; the route function does not run. `/docs` will show the new GET operation because it reads FastAPI's route registration.
+</details>
+
+## 10. Rename only the Python function `event()` to `banana()`
+
+Keep `@app.post("/event")` unchanged. **Predict first:** response and terminal.
+
+<details>
+<summary>Answer — reveal after predicting</summary>
+
+`POST /event` still works. The decorator registered the method and path; the function name is just the Python name FastAPI calls. `/docs` might display a generated operation label based on the function name, but the URL path remains `/event`.
+</details>
+
+## 11. Send a different JSON body to the same `POST /event`
+
+Use Chapter 2's `dict` version and send `{"event_type":"contact_click"}` after sending `{"event_type":"book_click"}`. **Predict first:** which function runs and what changes?
+
+<details>
+<summary>Answer — reveal after predicting</summary>
+
+Both requests match `POST /event`, so the same `event(data)` function runs twice. The path, method, and function do not change; the dictionary printed in the terminal changes because the request body changed.
+</details>
+
+## 12. Send an unexpected key before and after adding Pydantic
+
+Send `{"event_type":"book_click","extra":"hello"}` first with Chapter 2's `dict`, then with the Chapter 4 `Event` model. **Predict first:** what appears in the function and response?
+
+<details>
+<summary>Answer — reveal after predicting</summary>
+
+With `data: dict`, the whole dictionary including `extra` reaches the function. With the simple Pydantic model in this tutorial, required fields are validated but extra fields are ignored by default; `extra` does not appear in `data.model_dump()`. The request still succeeds. This tutorial does not configure Pydantic to reject unknown fields.
 </details>
 
 ---
